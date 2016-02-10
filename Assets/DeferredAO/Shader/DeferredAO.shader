@@ -61,6 +61,8 @@ Shader "Hidden/DeferredAO"
         return frac(sin(dot(uv, float2(12.9898, 78.233))) * 43758.5453);
     }
 
+    #define USE_IMP 1
+
     float3 spherical_kernel(float2 uv, float index)
     {
         // Uniformaly distributed points
@@ -71,7 +73,17 @@ Shader "Hidden/DeferredAO"
         float3 v = float3(u2 * cos(theta), u2 * sin(theta), u);
         // Adjustment for distance distribution.
         float l = index / SAMPLE_COUNT;
-        return v * lerp(0.1, 1.0, l * l);
+        return v * lerp(0.1, 1.0, sqrt(l));
+    }
+
+    float3 spherical_kernel2(float2 uv, float index)
+    {
+        float u = nrand(uv, 0, index);
+        float r = sqrt(u);
+        float theta = UNITY_PI * 2 * nrand(uv, 1, index);
+        float x = r * cos(theta);
+        float y = r * sin(theta);
+        return float3(x, y, sqrt(1 - u)) * sqrt(nrand(uv, 2, index));
     }
 
     half4 frag_ao(v2f_img i) : SV_Target 
@@ -95,13 +107,21 @@ Shader "Hidden/DeferredAO"
 
         float3x3 proj = (float3x3)unity_CameraProjection;
 
+        float3 norm_o_x = normalize(cross(float3(1, 0.1, 0.1), norm_o));
+        float3 norm_o_y = cross(norm_o, norm_o_x);
+
         float occ = 0.0;
         for (int s = 0; s < SAMPLE_COUNT; s++)
         {
+#if USE_IMP
+            float3 delta = spherical_kernel2(i.uv, s);
+            delta = norm_o_x * delta.x + norm_o_y * delta.y + norm_o * delta.z;
+#else
             float3 delta = spherical_kernel(i.uv, s);
 
             // Wants a sample in normal oriented hemisphere.
             delta *= (dot(norm_o, delta) >= 0) * 2 - 1;
+#endif
 
             // Sampling point.
             float3 pos_s = pos_o + delta * _Radius;
@@ -118,7 +138,11 @@ Shader "Hidden/DeferredAO"
 
             // Occlusion test.
             float dist = pos_s.z - depth_s;
+#if USE_IMP
+            float cosine = 1;
+#else
             float cosine = dot(norm_o, normalize(delta));
+#endif
             #if _RANGE_CHECK
             occ += (dist > 0.01 * _Radius) * (dist < _Radius) * cosine;
             #else
@@ -127,7 +151,12 @@ Shader "Hidden/DeferredAO"
         }
 
         float falloff = 1.0 - depth_o / _FallOff;
-        occ = saturate(occ * _Intensity * falloff * UNITY_PI * 2 / SAMPLE_COUNT);
+#if USE_IMP
+        occ *= UNITY_PI;
+#else
+        occ *= UNITY_PI * 2;
+#endif
+        occ = saturate(occ * _Intensity * falloff / SAMPLE_COUNT);
 
         return half4(lerp(src.rgb, (half3)0.0, occ), src.a);
     }
