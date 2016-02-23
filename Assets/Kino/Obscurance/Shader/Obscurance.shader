@@ -47,7 +47,13 @@ Shader "Hidden/Kino/Obscurance"
     float4 _MainTex_TexelSize;
     float4 _MaskTex_TexelSize;
 
+    #if 1
+    sampler2D _CameraGBufferTexture2;
+    sampler2D _CameraDepthTexture;
+    float4x4 _WorldToCamera;
+    #else
     sampler2D _CameraDepthNormalsTexture;
+    #endif
 
     half _Intensity;
     half _Contrast;
@@ -89,24 +95,38 @@ Shader "Hidden/Kino/Obscurance"
     // Sampling functions with CameraDepthNormalTexture
     float SampleDepth(float2 uv)
     {
+        #if 1
+        return LinearEyeDepth(SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, uv));
+        #else
         float4 cdn = tex2D(_CameraDepthNormalsTexture, uv);
         return DecodeFloatRG(cdn.zw) * _ProjectionParams.z;
+        #endif
     }
 
     float3 SampleNormal(float2 uv)
     {
+        #if 1
+        float3 norm = tex2D(_CameraGBufferTexture2, uv).xyz * 2 - 1;
+        return mul((float3x3)_WorldToCamera, norm);
+        #else
         float4 cdn = tex2D(_CameraDepthNormalsTexture, uv);
         float3 normal = DecodeViewNormalStereo(cdn);
         normal.z *= -1;
         return normal;
+        #endif
     }
 
     float SampleDepthNormal(float2 uv, out float3 normal)
     {
+        #if 1
+        normal = SampleNormal(uv);
+        return SampleDepth(uv);
+        #else
         float4 cdn = tex2D(_CameraDepthNormalsTexture, uv);
         normal = DecodeViewNormalStereo(cdn);
         normal.z *= -1;
         return DecodeFloatRG(cdn.zw) * _ProjectionParams.z;
+        #endif
     }
 
     // Reconstruct a world space position from a pair of UV and depth
@@ -303,9 +323,10 @@ Shader "Hidden/Kino/Obscurance"
     // Pass 0: single pass shader (no additional filtering)
     half4 frag_ao_combined(v2f_img i) : SV_Target
     {
-        half4 src = tex2D(_MainTex, i.uv);
+        //half4 src = tex2D(_MainTex, i.uv);
         half ao = EstimateObscurance(i.uv);
-        return half4(CombineObscurance(src.rgb, ao), src.a);
+        //return half4(CombineObscurance(src.rgb, ao), src.a);
+        return half4(0, 0, 0, ao);
     }
 
     // Pass 1: obscurance estimation pass
@@ -344,6 +365,7 @@ Shader "Hidden/Kino/Obscurance"
         Pass
         {
             ZTest Always Cull Off ZWrite Off
+            Blend SrcAlpha OneMinusSrcAlpha
             CGPROGRAM
             #pragma vertex vert_img
             #pragma fragment frag_ao_combined

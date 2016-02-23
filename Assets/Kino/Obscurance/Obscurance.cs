@@ -22,6 +22,7 @@
 // THE SOFTWARE.
 //
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace Kino
 {
@@ -109,24 +110,58 @@ namespace Kino
         [SerializeField] Shader _shader;
         Material _material;
 
+        CommandBuffer _commandBuffer;
+
         #endregion
 
         #region MonoBehaviour Functions
 
+/*
         void Start()
         {
             GetComponent<Camera>().depthTextureMode =
                 DepthTextureMode.DepthNormals;
         }
+*/
 
-        [ImageEffectOpaque]
-        void OnRenderImage(RenderTexture source, RenderTexture destination)
+        void OnEnable()
         {
+            var cam = GetComponent<Camera>();
+
             if (_material == null) {
                 _material = new Material(_shader);
                 _material.hideFlags = HideFlags.DontSave;
-            }
 
+                _commandBuffer = new CommandBuffer();
+                _commandBuffer.name = "CommandBufferFx";
+
+                cam.AddCommandBuffer(
+                    CameraEvent.BeforeReflections,
+                    _commandBuffer);
+
+                _commandBuffer.Blit(
+                    null,
+                    BuiltinRenderTextureType.CameraTarget,
+                    _material, 0);
+            }
+        }
+
+        void OnDisable()
+        {
+            var cam = GetComponent<Camera>();
+
+            cam.RemoveCommandBuffer(
+                CameraEvent.BeforeReflections,
+                _commandBuffer);
+
+            _commandBuffer = null;
+
+            if (_material != null) DestroyImmediate(_material);
+            _material = null;
+        }
+
+        void Update()
+        {
             // common properties
             _material.SetFloat("_Intensity", _intensity);
             _material.SetFloat("_Contrast", 0.6f);
@@ -148,6 +183,7 @@ namespace Kino
                 _material.SetInt("_SampleCount",
                     Mathf.Clamp(_sampleCountValue, 1, 120));
 
+/*
             // use the combined single-pass shader when no filtering
             if (_noiseFilter == 0 && !_downsampling)
             {
@@ -206,6 +242,7 @@ namespace Kino
 
                 RenderTexture.ReleaseTemporary(rtMask);
             }
+            */
         }
 
         #endregion
