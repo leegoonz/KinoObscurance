@@ -105,63 +105,64 @@ namespace Kino
 
         #endregion
 
-        #region Private Resources
+        #region Private Members
 
         [SerializeField] Shader _shader;
         Material _material;
-
         CommandBuffer _commandBuffer;
+
+        Shader shader {
+            get {
+                const string name = "Hidden/Kino/Obscurance";
+                return _shader ? _shader : Shader.Find(name);
+            }
+        }
 
         #endregion
 
         #region MonoBehaviour Functions
 
-/*
-        void Start()
-        {
-            GetComponent<Camera>().depthTextureMode =
-                DepthTextureMode.DepthNormals;
-        }
-*/
-
         void OnEnable()
         {
+            _material = new Material(shader);
+            _material.hideFlags = HideFlags.DontSave;
+
             var cam = GetComponent<Camera>();
 
-            if (_material == null) {
-                _material = new Material(_shader);
-                _material.hideFlags = HideFlags.DontSave;
-
+            if (cam.actualRenderingPath == RenderingPath.DeferredShading)
+            {
                 _commandBuffer = new CommandBuffer();
-                _commandBuffer.name = "CommandBufferFx";
-
-                cam.AddCommandBuffer(
-                    CameraEvent.BeforeReflections,
-                    _commandBuffer);
+                _commandBuffer.name = "Kino.Obscurance";
 
                 _commandBuffer.Blit(
-                    null,
-                    BuiltinRenderTextureType.CameraTarget,
-                    _material, 0);
+                    null, BuiltinRenderTextureType.CameraTarget, _material, 5);
+
+                cam.AddCommandBuffer(
+                    CameraEvent.BeforeReflections, _commandBuffer);
+            }
+            else
+            {
+                cam.depthTextureMode = DepthTextureMode.DepthNormals;
             }
         }
 
         void OnDisable()
         {
-            var cam = GetComponent<Camera>();
+            if (_commandBuffer != null)
+                GetComponent<Camera>().RemoveCommandBuffer(
+                    CameraEvent.BeforeReflections, _commandBuffer);
 
-            cam.RemoveCommandBuffer(
-                CameraEvent.BeforeReflections,
-                _commandBuffer);
+            if (_material != null)
+                    DestroyImmediate(_material);
 
             _commandBuffer = null;
-
-            if (_material != null) DestroyImmediate(_material);
             _material = null;
         }
 
         void Update()
         {
+            if (_commandBuffer == null) return;
+
             // common properties
             _material.SetFloat("_Intensity", _intensity);
             _material.SetFloat("_Contrast", 0.6f);
@@ -171,6 +172,39 @@ namespace Kino
 
             // common keywords
             _material.shaderKeywords = null;
+
+            _material.EnableKeyword("_SOURCE_GBUFFER");
+
+            if (_estimatorType == EstimatorType.DistanceBased)
+                _material.EnableKeyword("_METHOD_DISTANCE");
+
+            if (_sampleCount == SampleCount.Low)
+                _material.EnableKeyword("_COUNT_LOW");
+            else if (_sampleCount == SampleCount.Medium)
+                _material.EnableKeyword("_COUNT_MEDIUM");
+            else
+                _material.SetInt("_SampleCount",
+                    Mathf.Clamp(_sampleCountValue, 1, 120));
+        }
+
+        void OnRenderImage(RenderTexture source, RenderTexture destination)
+        {
+            if (_commandBuffer != null) {
+                Graphics.Blit(source, destination);
+                return;
+            }
+
+            // common properties
+            _material.SetFloat("_Intensity", _intensity);
+            _material.SetFloat("_Contrast", 0.6f);
+            _material.SetFloat("_Radius", Mathf.Max(_radius, 1e-5f));
+            _material.SetFloat("_DepthFallOff", 100);
+            _material.SetFloat("_TargetScale", _downsampling ? 0.5f : 1);
+
+            // common keywords
+            _material.shaderKeywords = null;
+
+            _material.EnableKeyword("_SOURCE_DEPTHNORMALS");
 
             if (_estimatorType == EstimatorType.DistanceBased)
                 _material.EnableKeyword("_METHOD_DISTANCE");
@@ -183,7 +217,6 @@ namespace Kino
                 _material.SetInt("_SampleCount",
                     Mathf.Clamp(_sampleCountValue, 1, 120));
 
-/*
             // use the combined single-pass shader when no filtering
             if (_noiseFilter == 0 && !_downsampling)
             {
@@ -242,7 +275,6 @@ namespace Kino
 
                 RenderTexture.ReleaseTemporary(rtMask);
             }
-            */
         }
 
         #endregion

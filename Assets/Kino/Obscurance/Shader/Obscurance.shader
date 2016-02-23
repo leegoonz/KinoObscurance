@@ -32,6 +32,8 @@ Shader "Hidden/Kino/Obscurance"
 
     #include "UnityCG.cginc"
 
+    #pragma multi_compile _SOURCE_GBUFFER _SOURCE_DEPTHNORMALS
+
     // estimator type selection
     #pragma multi_compile _METHOD_ANGLE _METHOD_DISTANCE
 
@@ -47,7 +49,7 @@ Shader "Hidden/Kino/Obscurance"
     float4 _MainTex_TexelSize;
     float4 _MaskTex_TexelSize;
 
-    #if 1
+    #if _SOURCE_GBUFFER
     sampler2D _CameraGBufferTexture2;
     sampler2D _CameraDepthTexture;
     float4x4 _WorldToCamera;
@@ -95,7 +97,7 @@ Shader "Hidden/Kino/Obscurance"
     // Sampling functions with CameraDepthNormalTexture
     float SampleDepth(float2 uv)
     {
-        #if 1
+        #if _SOURCE_GBUFFER
         return LinearEyeDepth(SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, uv));
         #else
         float4 cdn = tex2D(_CameraDepthNormalsTexture, uv);
@@ -105,7 +107,7 @@ Shader "Hidden/Kino/Obscurance"
 
     float3 SampleNormal(float2 uv)
     {
-        #if 1
+        #if _SOURCE_GBUFFER
         float3 norm = tex2D(_CameraGBufferTexture2, uv).xyz * 2 - 1;
         return mul((float3x3)_WorldToCamera, norm);
         #else
@@ -118,7 +120,7 @@ Shader "Hidden/Kino/Obscurance"
 
     float SampleDepthNormal(float2 uv, out float3 normal)
     {
-        #if 1
+        #if _SOURCE_GBUFFER
         normal = SampleNormal(uv);
         return SampleDepth(uv);
         #else
@@ -323,10 +325,9 @@ Shader "Hidden/Kino/Obscurance"
     // Pass 0: single pass shader (no additional filtering)
     half4 frag_ao_combined(v2f_img i) : SV_Target
     {
-        //half4 src = tex2D(_MainTex, i.uv);
+        half4 src = tex2D(_MainTex, i.uv);
         half ao = EstimateObscurance(i.uv);
-        //return half4(CombineObscurance(src.rgb, ao), src.a);
-        return half4(0, 0, 0, ao);
+        return half4(CombineObscurance(src.rgb, ao), src.a);
     }
 
     // Pass 1: obscurance estimation pass
@@ -359,13 +360,17 @@ Shader "Hidden/Kino/Obscurance"
         return half4(CombineObscurance(src.rgb, mask), src.a);
     }
 
+    half4 frag_gbuffer(v2f_img i) : SV_Target
+    {
+        return half4(0, 0, 0, EstimateObscurance(i.uv));
+    }
+
     ENDCG
     SubShader
     {
         Pass
         {
             ZTest Always Cull Off ZWrite Off
-            Blend SrcAlpha OneMinusSrcAlpha
             CGPROGRAM
             #pragma vertex vert_img
             #pragma fragment frag_ao_combined
@@ -405,6 +410,16 @@ Shader "Hidden/Kino/Obscurance"
             CGPROGRAM
             #pragma vertex vert_img
             #pragma fragment frag_blur_combine
+            #pragma target 3.0
+            ENDCG
+        }
+        Pass
+        {
+            ZTest Always Cull Off ZWrite Off
+            Blend SrcAlpha OneMinusSrcAlpha
+            CGPROGRAM
+            #pragma vertex vert_img
+            #pragma fragment frag_gbuffer
             #pragma target 3.0
             ENDCG
         }
