@@ -107,6 +107,7 @@ namespace Kino
 
         #region Private Members
 
+        [SerializeField] Mesh _quadMesh;
         [SerializeField] Shader _shader;
         Material _material;
         CommandBuffer _commandBuffer;
@@ -134,11 +135,19 @@ namespace Kino
                 _commandBuffer = new CommandBuffer();
                 _commandBuffer.name = "Kino.Obscurance";
 
-                _commandBuffer.Blit(
-                    null, BuiltinRenderTextureType.CameraTarget, _material, 5);
+                var mrt = new RenderTargetIdentifier[] {
+                    BuiltinRenderTextureType.GBuffer0,      // Albedo, Occ
+                    BuiltinRenderTextureType.CameraTarget   // Ambient
+                };
 
-                cam.AddCommandBuffer(
-                    CameraEvent.BeforeReflections, _commandBuffer);
+                _commandBuffer.SetRenderTarget
+                    (mrt, BuiltinRenderTextureType.CameraTarget);
+
+                _commandBuffer.DrawMesh
+                    (_quadMesh, Matrix4x4.identity, _material, 0, 5);
+
+                cam.AddCommandBuffer
+                    (CameraEvent.BeforeReflections, _commandBuffer);
             }
             else
             {

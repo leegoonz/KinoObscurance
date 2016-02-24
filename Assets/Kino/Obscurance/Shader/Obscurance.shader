@@ -322,6 +322,14 @@ Shader "Hidden/Kino/Obscurance"
 #endif
     }
 
+    v2f_img vert_cmdbuf(appdata_img v)
+    {
+        v2f_img o;
+        o.pos = v.vertex * float4(2, 2, 1, 1);
+        o.uv = v.texcoord;
+        return o;
+    }
+
     // Pass 0: single pass shader (no additional filtering)
     half4 frag_ao_combined(v2f_img i) : SV_Target
     {
@@ -360,9 +368,19 @@ Shader "Hidden/Kino/Obscurance"
         return half4(CombineObscurance(src.rgb, mask), src.a);
     }
 
-    half4 frag_gbuffer(v2f_img i) : SV_Target
+    struct OcclusionOutput
     {
-        return half4(0, 0, 0, EstimateObscurance(i.uv));
+        half4 gbuffer0 : COLOR0;
+        half4 gbuffer3 : COLOR1;
+    };
+
+    OcclusionOutput frag_gbuffer(v2f_img i) : SV_Target
+    {
+        half ao = EstimateObscurance(i.uv);
+        OcclusionOutput o;
+        o.gbuffer0 = half4(0, 0, 0, ao);
+        o.gbuffer3 = half4(ao, ao, ao, 0);
+        return o;
     }
 
     ENDCG
@@ -416,9 +434,9 @@ Shader "Hidden/Kino/Obscurance"
         Pass
         {
             ZTest Always Cull Off ZWrite Off
-            Blend SrcAlpha OneMinusSrcAlpha
+            Blend Zero OneMinusSrcColor, Zero OneMinusSrcAlpha
             CGPROGRAM
-            #pragma vertex vert_img
+            #pragma vertex vert_cmdbuf
             #pragma fragment frag_gbuffer
             #pragma target 3.0
             ENDCG
